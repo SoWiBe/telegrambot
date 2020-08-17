@@ -1,0 +1,121 @@
+import requests
+import lxml.html
+from lxml import etree
+from selenium import webdriver
+from bs4 import BeautifulSoup
+import telebot
+from telebot import types
+from datetime import datetime, date, time
+
+
+# итератор для 1, 2, 3 пары
+# первой паре соответствует 5 строчка таблицы, второй паре 6 строчка и тд
+lesson = [5, 6, 7]
+
+# словарь для столбцов,
+# каждому дню недели соответствует свой номер столбца
+# таким образом если у нас вторник, то расписание извлекать из 4 столбца
+day_of_week_1 = {1: 3, 2: 4, 3: 5, 4: 6, 5: 7, 6: 8,
+                 7: 9}
+
+day_of_week_2 = {1: 10, 2: 11, 3: 12, 4: 13, 5: 14, 6: 15, 7: 16}
+
+
+name_week = {1: "Понедельник", 2: "Вторник", 3: "Среда",
+             4: "Четверг", 5: "Пятница", 6: "Суббота", 7: "Воскресенье"}
+
+
+def make_timetable(time, count_week):
+    lessons = []
+    options = webdriver.ChromeOptions()
+    options.add_argument('headless')
+    driver = webdriver.Chrome(options=options)
+    driver.get(
+        'https://www.oat.ru/sites/default/downloads/schedule/rspcls37.html')
+    if count_week % 2 != 0:
+        week = "1-"
+        for i in range(3):
+            # самое главное -
+            # в список lessons я добавляю текст из определенной ячейки таблицы
+            # адрес ячейки - итерируемый lesson (1, 2, 3) и день недели, которому соответствует свой номер столбца
+            lessons.append(driver.find_element_by_xpath(
+                f'/html/body/table/tbody/tr[{lesson[i]}]/td[{day_of_week_1[time]}]'))
+
+    elif count_week % 2 == 0:
+        week = "2-"
+        for i in range(3):
+            # самое главное -
+            # в список lessons я добавляю текст из определенной ячейки таблицы
+            # адрес ячейки - итерируемый lesson (1, 2, 3) и день недели, которому соответствует свой номер столбца
+            lessons.append(driver.find_element_by_xpath(
+                f'/html/body/table/tbody/tr[{lesson[i]}]/td[{day_of_week_2[time]}]'))
+
+    result = datetime.now()
+    result = "Расписание на " + \
+        result.strftime("%d-%m-%Y") + "\n" + week + name_week[time] + "\n\n"
+
+    for elem in lessons:
+        result += elem.text + "\n\n"
+    driver.quit()
+    return result
+
+
+bot = telebot.TeleBot('1237386405:AAE5wVdNkMLVBtlpkOo5LzNo1TCTO6M0CNw')
+
+
+@bot.message_handler(commands=['start'])
+def sendMsg(message):
+    bot.send_message(message.chat.id, "Приветствую...")
+    bot.send_message(message.chat.id, """
+    Мои команды:
+    /start
+    /weather
+    /help
+    /timetable
+    """)
+
+
+@bot.message_handler(commands=['weather'])
+def getWeather(message):
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 6.0; WOW64; rv:24.0) Gecko/20100101 Firefox/24.0'}
+    resp = requests.get(
+        'https://www.gismeteo.ru/weather-omsk-4578/', headers=headers).text
+    soup = BeautifulSoup(resp, 'html.parser')
+
+    # find
+    title = soup.find('span', class_=('tab-weather__value_l'))
+    weather__count = title.get_text()
+    bot.send_message(message.chat.id, weather__count)
+
+
+@bot.message_handler(commands=['timetable'])
+def send_welcome(message):
+    keyboard = types.InlineKeyboardMarkup()
+    url_button = types.InlineKeyboardButton(
+        text="Table", callback_data="Table")
+    keyboard.add(url_button)
+    bot.send_message(message.from_user.id, text="----------------------------",
+                     reply_markup=keyboard)
+
+
+@bot.callback_query_handler(func=lambda call: True)
+def callback_worker(call):
+    if call.data == 'Table':
+        time = datetime.now().isoweekday()
+        count_week = datetime.utcnow().isocalendar()[1]
+        bot.send_message(call.message.chat.id,
+                         make_timetable(time, count_week))
+
+
+@bot.message_handler(commands=['help'])
+def sendCmd(message):
+    bot.send_message(message.chat.id, """
+    Мои команды:
+    /start
+    /weather
+    /command
+    """)
+
+
+bot.polling()
